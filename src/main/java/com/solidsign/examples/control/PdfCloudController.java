@@ -12,6 +12,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.ArrayList;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * [EN]    REST controller that triggers PAdES (PDF) signing using cloud HSM credentials.
@@ -77,4 +79,71 @@ public class PdfCloudController {
                 ? ResponseEntity.ok("Signed! ZIP at: " + result)
                 : ResponseEntity.internalServerError().body("Failed. Check logs.");
     }
+
+    /**
+     * [EN]    Form signing endpoint for React — PAdES cloud HSM. properties ignored.
+     *         signatureImages is optional.
+     * [PT-BR] Endpoint de formulário para React — PAdES HSM em nuvem. properties ignorado.
+     *         signatureImages é opcional.
+     * [ES]    Endpoint de formulario para React — PAdES HSM en nube. properties ignorado.
+     *         signatureImages es opcional.
+     */
+    @CrossOrigin
+    @PostMapping("/sign/form")
+    public ResponseEntity<byte[]> signForm(
+            @RequestPart("document")                                              MultipartFile[]  documents,
+            @RequestPart("authorization")                                         String           authorization,
+            @RequestPart("baseUrl")                                               String           baseUrl,
+            @RequestPart("cloudCredentials")                                      String           cloudCredentials,
+            @RequestPart(value = "signatureImage",        required = false)       MultipartFile[]  signatureImages,
+            @RequestPart(value = "profile",               required = false)       String           profile,
+            @RequestPart(value = "hashAlgorithm",         required = false)       String           hashAlgorithm,
+            @RequestPart(value = "sigFieldMeasurementUnit", required = false)     String           sigFieldMeasurementUnit,
+            @RequestPart(value = "signatureFieldConfig",  required = false)       String           signatureFieldConfig,
+            @RequestPart(value = "reason",                required = false)       String           reason,
+            @RequestPart(value = "location",              required = false)       String           location,
+            @RequestPart(value = "contact",               required = false)       String           contact,
+            @RequestPart(value = "signatureFieldName",    required = false)       String           signatureFieldName,
+            @RequestPart(value = "signatureTextConfig",   required = false)       String           signatureTextConfig,
+            @RequestPart(value = "mdpPermissionLevel",    required = false)       String           mdpPermissionLevel,
+            @RequestPart(value = "passwordsForDecryption", required = false)      String           passwordsForDecryption,
+            @RequestPart(value = "documentInfoMetadata",  required = false)       String           documentInfoMetadata,
+            @RequestPart(value = "signatureQrCodeConfig", required = false)       String           signatureQrCodeConfig
+    ) throws IOException {
+        List<File> tmpFiles = new ArrayList<>();
+        List<File> tmpImgs  = new ArrayList<>();
+        java.nio.file.Path tmpDir = java.nio.file.Files.createTempDirectory("solidsign-form-");
+        try {
+            for (MultipartFile mf : documents) {
+                java.nio.file.Path p = tmpDir.resolve(mf.getOriginalFilename() != null ? mf.getOriginalFilename() : "doc.pdf");
+                mf.transferTo(p);
+                tmpFiles.add(p.toFile());
+            }
+            if (signatureImages != null) {
+                for (MultipartFile img : signatureImages) {
+                    java.nio.file.Path p = tmpDir.resolve(img.getOriginalFilename() != null ? img.getOriginalFilename() : "img");
+                    img.transferTo(p);
+                    tmpImgs.add(p.toFile());
+                }
+            }
+            byte[] zip = service.signWithCloudForm(authorization, baseUrl, cloudCredentials,
+                    profile, hashAlgorithm,
+                    sigFieldMeasurementUnit, signatureFieldConfig,
+                    reason, location, contact,
+                    signatureFieldName, signatureTextConfig, mdpPermissionLevel,
+                    passwordsForDecryption, documentInfoMetadata, signatureQrCodeConfig,
+                    tmpFiles, tmpImgs);
+            if (zip != null)
+                return ResponseEntity.ok()
+                        .contentType(org.springframework.http.MediaType.parseMediaType("application/zip"))
+                        .header("Content-Disposition", "attachment; filename=\"signed_pdf.zip\"")
+                        .body(zip);
+            return ResponseEntity.internalServerError().build();
+        } finally {
+            tmpFiles.forEach(java.io.File::delete);
+            tmpImgs.forEach(java.io.File::delete);
+            tmpDir.toFile().delete();
+        }
+    }
+
 }
